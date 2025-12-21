@@ -435,3 +435,5 @@ export default function VoiceGesture({ onStateChange, onTranscription }: VoiceGe
 
 
 
+
+
