@@ -1,12 +1,12 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
+import { useState, useCallback } from "react";
 import NavigationBar from "@/components/NavigationBar";
 import FloatingActionBar from "@/components/FloatingActionBar";
 import VoiceHUD from "@/components/VoiceHUD";
 import { NoteBlock, BlockData } from "@/components/NoteBlock";
 import { AIProcessingBar } from "@/components/AIProcessingBar";
-import { useState, useCallback } from "react";
 
 const INITIAL_BLOCKS: BlockData[] = [
   { id: "1", type: "h1", content: "竞品深度调研" },
@@ -25,7 +25,7 @@ const pageVariants = {
   },
 };
 
-export default function PageDefault() {
+export default function Page() {
   const [blocks, setBlocks] = useState<BlockData[]>(INITIAL_BLOCKS);
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -39,10 +39,9 @@ export default function PageDefault() {
   }, []);
 
   return (
-    /* Outer Stage - Centers the Viewport */
     <main className="fixed inset-0 flex items-center justify-center bg-gray-200 md:py-10 overflow-hidden">
       {/* The Viewport Container - Mobile App Architecture */}
-    <div
+      <div
         className="
           relative 
           w-full max-w-[393px] 
@@ -51,24 +50,24 @@ export default function PageDefault() {
           overflow-hidden mx-auto 
           flex flex-col
         "
-      style={{
-        fontFamily:
-          '"PingFang SC", -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      }}
-    >
+        style={{
+          fontFamily:
+            '"PingFang SC", -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        }}
+      >
         {/* Layer 1: Header (Fixed Height, No Scroll) */}
         <header className="flex-none z-50 bg-[#F5F5F7]">
-      <NavigationBar />
+          <NavigationBar />
         </header>
 
         {/* Layer 2: Content Area (占据剩余空间，独立滚动) */}
         <div className="flex-1 overflow-y-auto no-scrollbar z-10 overscroll-contain scrollable-content">
           <motion.div
-        variants={pageVariants}
-        initial="hidden"
-        animate="visible"
+            variants={pageVariants}
+            initial="hidden"
+            animate="visible"
             className="pt-6 pb-[160px] px-6 article-content"
-      >
+          >
             {/* Text Content - Blocks inside scrollable area */}
             <article className="bg-transparent text-[#000000] flex flex-col gap-4">
               {blocks.map((block) => (
@@ -76,14 +75,14 @@ export default function PageDefault() {
               ))}
             </article>
           </motion.div>
-          </div>
+        </div>
 
         {/* Layer 3: Overlays (Pinned to Bottom, Floating above content) */}
-
+        
         {/* Navigation/Action Bar Dock */}
         <div className="absolute bottom-0 left-0 right-0 z-40 pointer-events-none">
-      <FloatingActionBar />
-    </div>
+          <FloatingActionBar />
+        </div>
 
         {/* AI Processing Bar */}
         <AnimatePresence>
