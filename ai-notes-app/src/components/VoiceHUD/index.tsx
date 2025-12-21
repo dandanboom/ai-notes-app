@@ -419,8 +419,10 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
     }
   }, [interactionState]);
 
-  const handlePointerUp = useCallback(async (e: React.PointerEvent) => {
-    e.currentTarget.releasePointerCapture(e.pointerId);
+  const handlePointerUp = useCallback(async (e?: React.PointerEvent) => {
+    if (e) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     
     // 情况 A: 500ms 还没到就松手了 (快速点击)
     if (longPressTimerRef.current) {
@@ -442,6 +444,11 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
       await stopVoice(true);
     }
   }, [interactionState, stopVoice]);
+
+  // GesturePad 需要的包装函数（无参数）
+  const handleGesturePadUp = useCallback(() => {
+    handlePointerUp();
+  }, [handlePointerUp]);
 
   // ==========================================
   // 渲染
@@ -477,7 +484,7 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
             <GesturePad
               interactionState={interactionState}
               onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
+              onPointerUp={handleGesturePadUp}
             />
           )}
         </AnimatePresence>
@@ -490,17 +497,25 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
         </AnimatePresence>
 
         {/* Layer 4: VoiceButton (Core) */}
+        {/* 🐛 DEBUG: 红色边框 + touchAction 显式设置 */}
         <motion.button
           type="button"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
+          style={{
+            touchAction: 'none', // 🐛 DEBUG: 显式设置，防止浏览器默认手势
+            WebkitTouchCallout: 'none', // iOS Safari 禁用长按菜单
+            WebkitUserSelect: 'none',
+            userSelect: 'none',
+          }}
           className="
             relative z-10 pointer-events-auto
             w-[62px] h-[62px] rounded-full
             bg-[#282828] flex items-center justify-center
             shadow-2xl cursor-pointer
             touch-none select-none
+            border-[5px] border-red-500
           "
           animate={{ scale: interactionState === "Pressing" ? 1.1 : 1 }}
         >
@@ -512,103 +527,6 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
               className="absolute top-[4px] right-[4px] w-[10px] h-[10px] rounded-full bg-red-500"
             />
           )}
-        </motion.button>
-      </div>
-    </div>
-  );
-}
-
-  // 锁定模式下的停止
-  const handleStopLocked = useCallback(async () => {
-    setInteractionState("Idle");
-    await stopVoice(false);
-  }, [stopVoice]);
-
-  // 丢弃录音
-  const handleDiscard = useCallback(async () => {
-    setInteractionState("Idle");
-    await stopVoice(true);
-  }, [stopVoice]);
-
-  // ==========================================
-  // 渲染
-  // ==========================================
-  
-  return (
-    <div 
-      className="absolute bottom-[21px] right-[16px] z-[100] pointer-events-none"
-      style={{ 
-        // 为展开状态预留空间
-        width: isGesturePadVisible ? 300 : "auto",
-        height: isGesturePadVisible ? 250 : "auto",
-      }}
-    >
-      {/* 容器内所有元素相对于右下角的按钮位置定位 */}
-      <div className="relative w-full h-full flex items-end justify-end">
-        
-        {/* Layer 1: VoiceStatusPanel（录音状态面板，从右滑入） */}
-        <AnimatePresence>
-          {isRecording && (
-            <div className="absolute bottom-0 right-[74px] pointer-events-auto">
-              <VoiceStatusPanel
-                duration={recordingDuration}
-                isRecording={isRecording}
-                onDiscard={handleDiscard}
-                onCollapse={interactionState === "Locked" ? handleStopLocked : handleDiscard}
-              />
-            </div>
-          )}
-        </AnimatePresence>
-
-        {/* Layer 2: GesturePad（手势圆盘，淡入+缩放） */}
-        <AnimatePresence>
-          {isGesturePadVisible && (
-            <GesturePad
-              interactionState={interactionState}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-            />
-          )}
-        </AnimatePresence>
-
-        {/* Layer 3: LockTarget（锁定目标，浮动在按钮上方） */}
-        <AnimatePresence>
-          {isGesturePadVisible && (
-            <LockTarget active={interactionState === "Hover_Lock"} />
-          )}
-        </AnimatePresence>
-
-        {/* Layer 4: VoiceButton（核心按钮，始终可见） */}
-        <motion.button
-          type="button"
-          onPointerDown={interactionState === "Idle" ? handlePointerDown : undefined}
-          onClick={interactionState === "Locked" ? handleStopLocked : undefined}
-          animate={{ 
-            scale: interactionState === "Pressing" ? 1.05 : 1,
-          }}
-          transition={{ type: "spring", stiffness: 300 }}
-          className="
-            relative z-10 pointer-events-auto
-            w-[62px] h-[62px] rounded-full
-            bg-[#282828]
-            flex items-center justify-center
-            shadow-[0_0_40px_rgba(0,0,0,0.15),_0_10px_30px_rgba(0,0,0,0.2)]
-            cursor-pointer touch-none
-          "
-        >
-          <VoiceIcon className="text-white" />
-          
-          {/* 录音指示器（红点） */}
-          <AnimatePresence>
-            {isRecording && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
-                className="absolute top-[4px] right-[4px] w-[10px] h-[10px] rounded-full bg-red-500"
-              />
-            )}
-          </AnimatePresence>
         </motion.button>
       </div>
     </div>
