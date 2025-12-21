@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { processVoiceCommand } from "@/app/actions";
 
 /* ============================================
    VOICE HUD SYSTEM
@@ -291,85 +292,207 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
   // 手势起点
   const startPosRef = useRef({ x: 0, y: 0 });
 
-  // Web Speech API
-  const recognitionRef = useRef<any>(null);
+  // MediaRecorder 相关
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  // 初始化 Speech Recognition
+  // 是否正在录音（需要在 useEffect 之前定义）
+  const isRecording = interactionState !== "Idle" && interactionState !== "Locked";
+
+  // 录音时长计时器
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      // 兼容性前缀处理 (iOS Safari 必须使用 webkitSpeechRecognition)
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      setRecordingDuration(0);
+    }
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [isRecording]);
+
+  // 清理函数：停止录音和释放资源
+  const cleanupRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {
+        console.error("停止 MediaRecorder 失败:", e);
+      }
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
+  }, []);
+
+  // 开始录音
+  const startVoice = useCallback(async () => {
+    try {
+      console.log("🎤 [VoiceHUD] 请求麦克风权限...");
       
-      if (!SpeechRecognition) {
-        setErrorMessage("Speech Recognition API not supported in this browser.");
+      // 请求麦克风权限
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        } 
+      });
+      
+      streamRef.current = stream;
+
+      // 创建 MediaRecorder
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") 
+        ? "audio/webm" 
+        : MediaRecorder.isTypeSupported("audio/mp4")
+        ? "audio/mp4"
+        : "audio/webm"; // 默认使用 webm
+
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType,
+        audioBitsPerSecond: 128000, // 128kbps，平衡质量和文件大小
+      });
+
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        console.log("🎤 [VoiceHUD] MediaRecorder 已停止");
+      };
+
+      mediaRecorder.onerror = (event) => {
+        console.error("❌ [VoiceHUD] MediaRecorder 错误:", event);
+        setErrorMessage("录音过程中发生错误");
+      };
+
+      mediaRecorderRef.current = mediaRecorder;
+      mediaRecorder.start(1000); // 每 1 秒收集一次数据
+
+      console.log("🎤 [VoiceHUD] 开始录音...");
+      
+      // 震动反馈
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    } catch (error) {
+      console.error("❌ [VoiceHUD] 启动录音失败:", error);
+      if (error instanceof Error) {
+        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
+          setErrorMessage("麦克风权限被拒绝，请在浏览器设置中允许麦克风访问");
+          alert("麦克风权限被拒绝，请在浏览器设置中允许麦克风访问");
+        } else if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+          setErrorMessage("未找到麦克风设备");
+          alert("未找到麦克风设备");
+        } else {
+          setErrorMessage(`启动录音失败: ${error.message}`);
+        }
+      }
+      cleanupRecording();
+    }
+  }, [cleanupRecording]);
+
+  // 停止录音并处理
+  const stopVoice = useCallback(async (cancelled: boolean) => {
+    console.log(`🎤 [VoiceHUD] 停止录音 (取消: ${cancelled})`);
+
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") {
+      cleanupRecording();
+      return;
+    }
+
+    // 停止录音
+    return new Promise<void>(async (resolve) => {
+      if (!mediaRecorderRef.current) {
+        resolve();
         return;
       }
 
-      try {
-        recognitionRef.current = new SpeechRecognition();
-        recognitionRef.current.continuous = true;
-        recognitionRef.current.interimResults = true;
-        recognitionRef.current.lang = "zh-CN";
+      const recorder = mediaRecorderRef.current;
+      const mimeType = recorder.mimeType || "audio/webm";
 
-        recognitionRef.current.onresult = (event: any) => {
-          let interimTranscript = "";
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              // Final transcript handle if needed
-            } else {
-              interimTranscript += event.results[i][0].transcript;
-            }
-          }
-        };
+      // 处理录音数据的函数
+      const processRecording = async () => {
+        cleanupRecording();
 
-        recognitionRef.current.onerror = (event: any) => {
-          console.error("Speech Recognition Error:", event.error);
-          if (event.error === "not-allowed") {
-            alert("麦克风权限被拒绝，请在设置中开启。");
-          }
-        };
-      } catch (e) {
-        console.error("Speech Recognition Init Error:", e);
-      }
-    }
-  }, []);
-
-  const startVoice = useCallback(() => {
-    console.log("🎤 [VoiceHUD] 开始录音...");
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-        if (navigator.vibrate) {
-          navigator.vibrate(50);
+        if (cancelled) {
+          console.log("🚫 [VoiceHUD] 录音已取消");
+          resolve();
+          return;
         }
-      } catch (e) {
-        console.error("Recognition start error:", e);
-      }
-    }
-  }, []);
 
-  const stopVoice = useCallback(async (cancelled: boolean) => {
-    console.log(`🎤 [VoiceHUD] 停止录音 (取消: ${cancelled})`);
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {
-        // Ignore "not started" errors
-      }
-      
-      if (!cancelled) {
-        onProcessing?.(true);
-        // 模拟 AI 处理并上屏
-        setTimeout(() => {
-          onTranscription?.("这是长按发送的模拟语音结果。");
+        // 处理录音数据
+        try {
+          onProcessing?.(true);
+          console.log("📤 [VoiceHUD] 准备发送音频到服务器...");
+
+          // 将音频块合并为 Blob
+          const audioBlob = new Blob(audioChunksRef.current, { 
+            type: mimeType
+          });
+
+          // 创建 FormData 并发送到服务器
+          const formData = new FormData();
+          const audioFile = new File([audioBlob], "recording.webm", { 
+            type: audioBlob.type 
+          });
+          formData.append("audio", audioFile);
+
+          // 调用 Server Action
+          const result = await processVoiceCommand(formData);
+
+          if (result && result.trim()) {
+            console.log("✅ [VoiceHUD] 处理完成，结果:", result);
+            onTranscription?.(result);
+          } else {
+            console.log("⚠️ [VoiceHUD] 处理结果为空");
+          }
+        } catch (error) {
+          console.error("❌ [VoiceHUD] 处理录音失败:", error);
+          setErrorMessage(
+            error instanceof Error 
+              ? `处理失败: ${error.message}` 
+              : "处理录音时发生错误"
+          );
+        } finally {
           onProcessing?.(false);
-        }, 1500);
-      }
-    }
-  }, [onTranscription, onProcessing]);
+          resolve();
+        }
+      };
 
-  // 是否正在录音
-  const isRecording = interactionState !== "Idle" && interactionState !== "Locked";
+      // 设置 onstop 处理器
+      recorder.onstop = processRecording;
+
+      // 停止 MediaRecorder
+      if (recorder.state === "recording") {
+        recorder.stop();
+      } else if (recorder.state === "inactive") {
+        // 如果已经停止，直接处理
+        await processRecording();
+      } else {
+        // 其他状态，等待停止
+        recorder.stop();
+      }
+    });
+  }, [onTranscription, onProcessing, cleanupRecording]);
+
   const isGesturePadVisible = interactionState === "Pressing" || 
                               interactionState === "Hover/Cancel" || 
                               interactionState === "Hover_Lock";
@@ -497,14 +620,13 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
         </AnimatePresence>
 
         {/* Layer 4: VoiceButton (Core) */}
-        {/* 🐛 DEBUG: 红色边框 + touchAction 显式设置 */}
         <motion.button
           type="button"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           style={{
-            touchAction: 'none', // 🐛 DEBUG: 显式设置，防止浏览器默认手势
+            touchAction: 'none', // 防止浏览器默认手势
             WebkitTouchCallout: 'none', // iOS Safari 禁用长按菜单
             WebkitUserSelect: 'none',
             userSelect: 'none',
@@ -515,7 +637,6 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
             bg-[#282828] flex items-center justify-center
             shadow-2xl cursor-pointer
             touch-none select-none
-            border-[5px] border-red-500
           "
           animate={{ scale: interactionState === "Pressing" ? 1.1 : 1 }}
         >
@@ -532,6 +653,9 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
     </div>
   );
 }
+
+
+
 
 
 
