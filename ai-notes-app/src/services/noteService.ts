@@ -286,3 +286,5 @@ export async function getUserProfileByAuthId(authId: string) {
     where: { authId },
   });
 }
+
+

@@ -143,3 +143,5 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 3. 你使用的浏览器和版本
 4. 是本地开发还是 Vercel 部署
 
+
+

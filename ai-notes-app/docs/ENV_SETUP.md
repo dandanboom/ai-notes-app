@@ -155,3 +155,5 @@ npm run dev
 1. `NEXT_PUBLIC_SUPABASE_URL` 和 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 正确
 2. 在 Supabase 仪表板中启用了 Email 认证
 
+
+

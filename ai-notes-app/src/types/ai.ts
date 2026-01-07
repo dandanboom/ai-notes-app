@@ -50,3 +50,5 @@ export function isErrorResponse(response: AIResponse | string): response is stri
   return typeof response === 'string' && response.startsWith('ERROR:');
 }
 
+
+

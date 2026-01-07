@@ -660,3 +660,5 @@ export const useGhostTexts = () => useNoteStore((state) => state.ghostTexts);
 export const useIsSyncing = () => useNoteStore((state) => state.isSyncing);
 export const useSyncError = () => useNoteStore((state) => state.syncError);
 
+
+
