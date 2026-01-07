@@ -23,37 +23,4 @@ html, body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
-  
-  /* --- CRITICAL: Viewport Locking for Mobile App Experience --- */
-  height: 100% !important;
-  width: 100% !important;
-  margin: 0;
-  padding: 0;
-  overflow: hidden !important; /* Disable body scroll */
-  position: fixed !important; /* Extra insurance for iOS Safari */
-  touch-action: none; /* Disable default touch behaviors like pull-to-refresh */
-  -webkit-user-select: none; /* Disable text selection globally for App feel */
-  user-select: none;
-}
-
-/* Allow text selection only in content blocks if needed */
-.article-content {
-  -webkit-user-select: text;
-  user-select: text;
-}
-
-/* Allow touch interaction only in specific scrollable areas */
-.scrollable-content {
-  touch-action: pan-y !important;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Scrollbar Hiding Utility - iOS-native scrolling */
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
 }

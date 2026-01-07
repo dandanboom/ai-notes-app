@@ -1,0 +1,91 @@
+// Prisma Schema for AI Notes App
+// Database: Supabase PostgreSQL
+// 注意: Prisma 7+ 的数据库 URL 配置在 prisma.config.ts 中
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// User Profile
+// Links to Supabase Auth via auth.users.id
+// ============================================
+model UserProfile {
+  id        String   @id @default(uuid()) @db.Uuid
+  authId    String   @unique @map("auth_id") @db.Uuid // Supabase Auth user ID
+  email     String?
+  name      String?
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  notebooks Notebook[]
+
+  @@map("user_profiles")
+}
+
+// ============================================
+// Notebook
+// A container for Notes (like a folder)
+// ============================================
+model Notebook {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  title       String   @default("Untitled Notebook")
+  description String?
+  emoji       String?  @default("📝") // Icon for the notebook
+  isArchived  Boolean  @default(false) @map("is_archived")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user  UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notes Note[]
+
+  @@index([userId])
+  @@map("notebooks")
+}
+
+// ============================================
+// Note
+// The atomic unit of content (maps to TextBlock)
+// ============================================
+model Note {
+  id         String   @id @default(uuid()) @db.Uuid
+  notebookId String   @map("notebook_id") @db.Uuid
+  content    String   @default("") // Markdown content
+  type       NoteType @default(PARAGRAPH) // Type of the block
+  order      Int      @default(0) // Position in the notebook
+  isEmpty    Boolean  @default(true) @map("is_empty")
+  metadata   Json?    // For future extensibility (e.g., AI processing info)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  notebook Notebook @relation(fields: [notebookId], references: [id], onDelete: Cascade)
+
+  @@index([notebookId, order])
+  @@map("notes")
+}
+
+// ============================================
+// Note Types (for future extensibility)
+// ============================================
+enum NoteType {
+  HEADING_1
+  HEADING_2
+  HEADING_3
+  PARAGRAPH
+  BULLET_LIST
+  NUMBERED_LIST
+  QUOTE
+  CODE_BLOCK
+  DIVIDER
+}

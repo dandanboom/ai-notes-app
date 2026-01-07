@@ -3,44 +3,19 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { processVoiceCommand } from "@/app/actions";
+import { isErrorResponse } from "@/types/ai";
+import type { AIResponse } from "@/types/ai";
 
 /* ============================================
    VOICE HUD SYSTEM
    
-   布局结构 (参考 Page/Editor/Mode_Recording):
-   ┌──────────────────────────────────────────────────────┐
-   │                                              [🔒]    │ ← Lock 浮动图标
-   │                                               ↑      │
-   │ [VoiceStatusPanel]─────────────[12px]───[VoiceBtn]  │ ← 水平对齐
-   │  00:22 | |||||||||| | 🗑️ | <              [62px]    │
-   └──────────────────────────────────────────────────────┘
-   
-   组件层级:
-   - VoiceHUDContainer (fixed, 右下角)
-     - VoiceStatusPanel (录音状态面板，从右滑入)
-     - GesturePad (手势圆盘，淡入+缩放)
-     - VoiceButton (核心按钮，始终可见)
-     - LockTarget (锁定目标，浮动在按钮上方)
+   使用 Server Action 处理语音
    ============================================ */
 
 // ==========================================
 // 类型定义
 // ==========================================
 type InteractionState = "Idle" | "Pressing" | "Hover/Cancel" | "Hover_Lock" | "Locked";
-
-// ==========================================
-// 语音录制接口（预留）
-// ==========================================
-async function startRecording(): Promise<void> {
-  console.log("🎤 [VoiceHUD] 开始录音...");
-}
-
-async function stopRecording(cancelled: boolean = false): Promise<void> {
-  console.log(`🎤 [VoiceHUD] 停止录音 (取消: ${cancelled})`);
-  if (cancelled) return;
-  
-  // 🔌 LLM API 接入点 - 详见之前的注释
-}
 
 // ==========================================
 // 子组件：图标
@@ -90,7 +65,6 @@ function ChevronIcon() {
 // ==========================================
 
 function WaveformVisualizer({ isActive }: { isActive: boolean }) {
-  // 生成随机波形数据
   const bars = 24;
   
   return (
@@ -119,14 +93,13 @@ function WaveformVisualizer({ isActive }: { isActive: boolean }) {
 // ==========================================
 
 interface VoiceStatusPanelProps {
-  duration: number; // 录音时长（秒）
+  duration: number;
   isRecording: boolean;
   onDiscard: () => void;
   onCollapse: () => void;
 }
 
 function VoiceStatusPanel({ duration, isRecording, onDiscard, onCollapse }: VoiceStatusPanelProps) {
-  // 格式化时间 mm:ss
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -139,39 +112,18 @@ function VoiceStatusPanel({ duration, isRecording, onDiscard, onCollapse }: Voic
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 100, scale: 0.9 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="
-        flex items-center gap-3
-        h-[56px] px-4
-        bg-white/90 backdrop-blur-xl
-        rounded-full
-        shadow-[0_4px_20px_rgba(0,0,0,0.1)]
-      "
+      className="flex items-center gap-3 h-[56px] px-4 bg-white/90 backdrop-blur-xl rounded-full shadow-[0_4px_20px_rgba(0,0,0,0.1)]"
     >
-      {/* 时间显示 */}
       <span className="text-[15px] font-medium text-[#282828] tabular-nums min-w-[40px]">
         {formatTime(duration)}
       </span>
-      
-      {/* 波形可视化 */}
       <div className="flex-1 min-w-[100px]">
         <WaveformVisualizer isActive={isRecording} />
       </div>
-      
-      {/* 丢弃按钮 */}
-      <button
-        type="button"
-        onClick={onDiscard}
-        className="p-2 rounded-full hover:bg-black/5 transition-colors"
-      >
+      <button type="button" onClick={onDiscard} className="p-2 rounded-full hover:bg-black/5 transition-colors">
         <DiscardIcon />
       </button>
-      
-      {/* 收起按钮 */}
-      <button
-        type="button"
-        onClick={onCollapse}
-        className="p-2 rounded-full hover:bg-black/5 transition-colors"
-      >
+      <button type="button" onClick={onCollapse} className="p-2 rounded-full hover:bg-black/5 transition-colors">
         <ChevronIcon />
       </button>
     </motion.div>
@@ -179,7 +131,7 @@ function VoiceStatusPanel({ duration, isRecording, onDiscard, onCollapse }: Voic
 }
 
 // ==========================================
-// 子组件：手势圆盘（展开状态背景）
+// 子组件：手势圆盘
 // ==========================================
 
 interface GesturePadProps {
@@ -196,39 +148,17 @@ function GesturePad({ interactionState, onPointerMove, onPointerUp }: GesturePad
       exit={{ opacity: 0, scale: 0.3 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
       className="absolute w-[200px] h-[200px] pointer-events-auto"
-      style={{
-        // 圆盘中心与按钮中心重合
-        right: -69, // (200 - 62) / 2 = 69
-        bottom: -69,
-      }}
+      style={{ right: -69, bottom: -69 }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
-      {/* 半透明背景圆盘 */}
       <div className="absolute inset-0 rounded-full bg-[#E5E5E5]/95 shadow-[0_5px_30px_rgba(0,0,0,0.15)]" />
-      
-      {/* 取消区域指示器（左侧） */}
-      <div
-        className={`
-          absolute left-[16px] top-1/2 -translate-y-1/2
-          w-[28px] h-[28px] rounded-full
-          flex items-center justify-center
-          transition-all duration-200
-          ${interactionState === "Hover/Cancel" ? "bg-white/50" : ""}
-        `}
-      >
-        <div className={`
-          w-[24px] h-[24px] rounded-full border-[1.5px]
-          flex items-center justify-center
-          transition-colors duration-200
-          ${interactionState === "Hover/Cancel" ? "border-[#E53935]" : "border-[#A0A0A0]"}
-        `}>
+      <div className={`absolute left-[16px] top-1/2 -translate-y-1/2 w-[28px] h-[28px] rounded-full flex items-center justify-center transition-all duration-200 ${interactionState === "Hover/Cancel" ? "bg-white/50" : ""}`}>
+        <div className={`w-[24px] h-[24px] rounded-full border-[1.5px] flex items-center justify-center transition-colors duration-200 ${interactionState === "Hover/Cancel" ? "border-[#E53935]" : "border-[#A0A0A0]"}`}>
           <DiscardIcon active={interactionState === "Hover/Cancel"} />
         </div>
       </div>
-      
-      {/* 收起指示线（右侧和底部） */}
       <div className="absolute right-[56px] top-1/2 -translate-y-1/2 w-[4px] h-[1.5px] bg-[#A0A0A0] rounded-full" />
       <div className="absolute bottom-[56px] left-1/2 -translate-x-1/2 w-[1.5px] h-[4px] bg-[#A0A0A0] rounded-full" />
     </motion.div>
@@ -236,7 +166,7 @@ function GesturePad({ interactionState, onPointerMove, onPointerUp }: GesturePad
 }
 
 // ==========================================
-// 子组件：锁定目标（浮动在按钮上方）
+// 子组件：锁定目标
 // ==========================================
 
 interface LockTargetProps {
@@ -250,20 +180,9 @@ function LockTarget({ active }: LockTargetProps) {
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      className={`
-        absolute bottom-[80px] right-[16px]
-        w-[32px] h-[32px] rounded-full
-        flex items-center justify-center
-        transition-all duration-200
-        ${active ? "bg-white/50" : ""}
-      `}
+      className={`absolute bottom-[80px] right-[16px] w-[32px] h-[32px] rounded-full flex items-center justify-center transition-all duration-200 ${active ? "bg-white/50" : ""}`}
     >
-      <div className={`
-        w-[28px] h-[28px] rounded-full border-[1.5px]
-        flex items-center justify-center
-        transition-colors duration-200
-        ${active ? "border-[#282828]" : "border-[#A0A0A0]"}
-      `}>
+      <div className={`w-[28px] h-[28px] rounded-full border-[1.5px] flex items-center justify-center transition-colors duration-200 ${active ? "border-[#282828]" : "border-[#A0A0A0]"}`}>
         <LockIcon active={active} />
       </div>
     </motion.div>
@@ -275,32 +194,46 @@ function LockTarget({ active }: LockTargetProps) {
 // ==========================================
 
 interface VoiceHUDProps {
-  onTranscription?: (text: string) => void;
+  /** 当 AI 返回结构化响应时调用 */
+  onAIResponse?: (response: AIResponse) => void;
+  /** 当 AI 处理状态变化时调用 */
   onProcessing?: (isProcessing: boolean) => void;
+  /** 当前文档内容（用于 AI 判断修改意图） */
+  contextContent?: string;
+  /** 对话历史（用于追问模式） */
+  chatHistory?: string;
+  /** 兼容旧接口 */
+  onTranscription?: (text: string) => void;
 }
 
-export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProps) {
+export default function VoiceHUD({
+  onAIResponse,
+  onProcessing,
+  contextContent,
+  chatHistory,
+  onTranscription,
+}: VoiceHUDProps) {
   // 交互状态
   const [interactionState, setInteractionState] = useState<InteractionState>("Idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // 录音时长
+  // 录音状态
   const [recordingDuration, setRecordingDuration] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // 手势起点
+  // 手势
   const startPosRef = useRef({ x: 0, y: 0 });
 
-  // MediaRecorder 相关
+  // MediaRecorder
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+  const mimeTypeRef = useRef<string>("audio/webm");
 
-  // 是否正在录音（需要在 useEffect 之前定义）
   const isRecording = interactionState !== "Idle" && interactionState !== "Locked";
 
-  // 录音时长计时器
+  // 录音计时器
   useEffect(() => {
     if (isRecording) {
       timerRef.current = setInterval(() => {
@@ -313,15 +246,12 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
       }
       setRecordingDuration(0);
     }
-
     return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isRecording]);
 
-  // 清理函数：停止录音和释放资源
+  // 清理录音
   const cleanupRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       try {
@@ -336,6 +266,7 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
     }
     mediaRecorderRef.current = null;
     audioChunksRef.current = [];
+    mimeTypeRef.current = "audio/webm";
   }, []);
 
   // 开始录音
@@ -343,29 +274,15 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
     try {
       console.log("🎤 [VoiceHUD] 请求麦克风权限...");
       
-      // 请求麦克风权限
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        } 
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
       
       streamRef.current = stream;
-
-      // 创建 MediaRecorder
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm") 
-        ? "audio/webm" 
-        : MediaRecorder.isTypeSupported("audio/mp4")
-        ? "audio/mp4"
-        : "audio/webm"; // 默认使用 webm
-
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType,
-        audioBitsPerSecond: 128000, // 128kbps，平衡质量和文件大小
-      });
-
+      const mediaRecorder = new MediaRecorder(stream);
+      const actualMimeType = mediaRecorder.mimeType || "audio/webm";
+      mimeTypeRef.current = actualMimeType;
+      
       audioChunksRef.current = [];
 
       mediaRecorder.ondataavailable = (event) => {
@@ -374,33 +291,21 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
         }
       };
 
-      mediaRecorder.onstop = () => {
-        console.log("🎤 [VoiceHUD] MediaRecorder 已停止");
-      };
-
-      mediaRecorder.onerror = (event) => {
-        console.error("❌ [VoiceHUD] MediaRecorder 错误:", event);
-        setErrorMessage("录音过程中发生错误");
-      };
-
       mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start(1000); // 每 1 秒收集一次数据
+      mediaRecorder.start();
 
-      console.log("🎤 [VoiceHUD] 开始录音...");
+      console.log(`🎤 [VoiceHUD] 开始录音 (${actualMimeType})`);
       
-      // 震动反馈
       if (navigator.vibrate) {
         navigator.vibrate(50);
       }
     } catch (error) {
       console.error("❌ [VoiceHUD] 启动录音失败:", error);
       if (error instanceof Error) {
-        if (error.name === "NotAllowedError" || error.name === "PermissionDeniedError") {
-          setErrorMessage("麦克风权限被拒绝，请在浏览器设置中允许麦克风访问");
-          alert("麦克风权限被拒绝，请在浏览器设置中允许麦克风访问");
-        } else if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+        if (error.name === "NotAllowedError") {
+          setErrorMessage("麦克风权限被拒绝");
+        } else if (error.name === "NotFoundError") {
           setErrorMessage("未找到麦克风设备");
-          alert("未找到麦克风设备");
         } else {
           setErrorMessage(`启动录音失败: ${error.message}`);
         }
@@ -413,100 +318,91 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
   const stopVoice = useCallback(async (cancelled: boolean) => {
     console.log(`🎤 [VoiceHUD] 停止录音 (取消: ${cancelled})`);
 
-    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") {
+    if (!mediaRecorderRef.current) {
       cleanupRecording();
       return;
     }
 
-    // 停止录音
-    return new Promise<void>(async (resolve) => {
-      if (!mediaRecorderRef.current) {
-        resolve();
-        return;
-      }
+    const recorder = mediaRecorderRef.current;
 
-      const recorder = mediaRecorderRef.current;
-      const mimeType = recorder.mimeType || "audio/webm";
+    if (recorder.state === "inactive") {
+      cleanupRecording();
+      return;
+    }
 
-      // 处理录音数据的函数
-      const processRecording = async () => {
-        cleanupRecording();
-
-        if (cancelled) {
-          console.log("🚫 [VoiceHUD] 录音已取消");
-          resolve();
-          return;
-        }
-
-        // 处理录音数据
-        try {
-          onProcessing?.(true);
-          console.log("📤 [VoiceHUD] 准备发送音频到服务器...");
-
-          // 将音频块合并为 Blob
-          const audioBlob = new Blob(audioChunksRef.current, { 
-            type: mimeType
-          });
-
-          // 创建 FormData 并发送到服务器
-          const formData = new FormData();
-          const audioFile = new File([audioBlob], "recording.webm", { 
-            type: audioBlob.type 
-          });
-          formData.append("audio", audioFile);
-
-          // 调用 Server Action
-          const result = await processVoiceCommand(formData);
-
-          if (result && result.trim()) {
-            console.log("✅ [VoiceHUD] 处理完成，结果:", result);
-            onTranscription?.(result);
-          } else {
-            console.log("⚠️ [VoiceHUD] 处理结果为空");
+    if (recorder.state === "recording") {
+      recorder.onstop = () => {
+        setTimeout(async () => {
+          if (cancelled) {
+            cleanupRecording();
+            return;
           }
-        } catch (error) {
-          console.error("❌ [VoiceHUD] 处理录音失败:", error);
-          setErrorMessage(
-            error instanceof Error 
-              ? `处理失败: ${error.message}` 
-              : "处理录音时发生错误"
-          );
-        } finally {
-          onProcessing?.(false);
-          resolve();
-        }
+
+          if (audioChunksRef.current.length === 0) {
+            setErrorMessage("没有录制到音频数据");
+            cleanupRecording();
+            onProcessing?.(false);
+            return;
+          }
+
+          const mimeType = mimeTypeRef.current;
+
+          try {
+            onProcessing?.(true);
+
+            const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+            const formData = new FormData();
+            const fileName = mimeType.includes("mp4") ? "recording.mp4" : "recording.webm";
+            const audioFile = new File([audioBlob], fileName, { type: mimeType });
+            formData.append("audio", audioFile);
+
+            console.log(`📤 [VoiceHUD] 发送音频: ${fileName}, ${audioFile.size} bytes`);
+
+            // 调用 Server Action
+            const result = await processVoiceCommand(formData, contextContent, chatHistory);
+
+            if (isErrorResponse(result)) {
+              console.error("❌ [VoiceHUD] 服务器返回错误:", result);
+              setErrorMessage(result);
+              return;
+            }
+
+            const aiResponse = result as AIResponse;
+            console.log("✅ [VoiceHUD] 处理完成:", aiResponse.type, "内容长度:", aiResponse.content?.length || 0);
+
+            if (onAIResponse) {
+              onAIResponse(aiResponse);
+            } else if (onTranscription && aiResponse.content) {
+              onTranscription(aiResponse.content);
+            }
+          } catch (error) {
+            console.error("❌ [VoiceHUD] 处理录音失败:", error);
+            setErrorMessage(error instanceof Error ? error.message : "处理失败");
+          } finally {
+            onProcessing?.(false);
+            cleanupRecording();
+          }
+        }, 500);
       };
 
-      // 设置 onstop 处理器
-      recorder.onstop = processRecording;
-
-      // 停止 MediaRecorder
-      if (recorder.state === "recording") {
-        recorder.stop();
-      } else if (recorder.state === "inactive") {
-        // 如果已经停止，直接处理
-        await processRecording();
-      } else {
-        // 其他状态，等待停止
-        recorder.stop();
-      }
-    });
-  }, [onTranscription, onProcessing, cleanupRecording]);
+      recorder.stop();
+    } else {
+      cleanupRecording();
+    }
+  }, [onTranscription, onAIResponse, onProcessing, contextContent, chatHistory, cleanupRecording]);
 
   const isGesturePadVisible = interactionState === "Pressing" || 
                               interactionState === "Hover/Cancel" || 
                               interactionState === "Hover_Lock";
 
   // ==========================================
-  // 事件处理 (严格长按逻辑)
+  // 事件处理
   // ==========================================
   
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    // 捕获指针，防止长按触发浏览器菜单
     e.currentTarget.setPointerCapture(e.pointerId);
     startPosRef.current = { x: e.clientX, y: e.clientY };
     
-    // 启动 500ms 定时器
     if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = setTimeout(() => {
       setInteractionState("Pressing");
@@ -516,7 +412,6 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
   }, [startVoice]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    // 1. 等待期内移动判定
     if (longPressTimerRef.current) {
       const deltaX = e.clientX - startPosRef.current.x;
       const deltaY = e.clientY - startPosRef.current.y;
@@ -527,7 +422,6 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
       return;
     }
 
-    // 2. 录音中手势判定
     if (interactionState === "Idle" || interactionState === "Locked") return;
     
     const deltaX = e.clientX - startPosRef.current.x;
@@ -547,7 +441,6 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     
-    // 情况 A: 500ms 还没到就松手了 (快速点击)
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
@@ -558,17 +451,13 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
     const finalState = interactionState;
     setInteractionState("Idle");
 
-    // 情况 B: 正常结束并发送
     if (finalState === "Pressing" || finalState === "Hover_Lock") {
       await stopVoice(false);
-    } 
-    // 情况 C: 取消
-    else if (finalState === "Hover/Cancel") {
+    } else if (finalState === "Hover/Cancel") {
       await stopVoice(true);
     }
   }, [interactionState, stopVoice]);
 
-  // GesturePad 需要的包装函数（无参数）
   const handleGesturePadUp = useCallback(() => {
     handlePointerUp();
   }, [handlePointerUp]);
@@ -583,11 +472,11 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
       style={{ 
         width: isGesturePadVisible ? 300 : 62,
         height: isGesturePadVisible ? 250 : 62,
-        touchAction: "none", // 关键：禁止浏览器默认手势
+        touchAction: "none",
       }}
     >
       <div className="relative w-full h-full flex items-end justify-end">
-        {/* Layer 1: VoiceStatusPanel */}
+        {/* VoiceStatusPanel */}
         <AnimatePresence>
           {(isRecording || interactionState === "Locked") && (
             <div className="absolute bottom-0 right-[74px] pointer-events-auto">
@@ -601,7 +490,7 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
           )}
         </AnimatePresence>
 
-        {/* Layer 2: GesturePad */}
+        {/* GesturePad */}
         <AnimatePresence>
           {isGesturePadVisible && (
             <GesturePad
@@ -612,32 +501,26 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
           )}
         </AnimatePresence>
 
-        {/* Layer 3: LockTarget */}
+        {/* LockTarget */}
         <AnimatePresence>
           {isGesturePadVisible && (
             <LockTarget active={interactionState === "Hover_Lock"} />
           )}
         </AnimatePresence>
 
-        {/* Layer 4: VoiceButton (Core) */}
+        {/* VoiceButton */}
         <motion.button
           type="button"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           style={{
-            touchAction: 'none', // 防止浏览器默认手势
-            WebkitTouchCallout: 'none', // iOS Safari 禁用长按菜单
+            touchAction: 'none',
+            WebkitTouchCallout: 'none',
             WebkitUserSelect: 'none',
             userSelect: 'none',
           }}
-          className="
-            relative z-10 pointer-events-auto
-            w-[62px] h-[62px] rounded-full
-            bg-[#282828] flex items-center justify-center
-            shadow-2xl cursor-pointer
-            touch-none select-none
-          "
+          className="relative z-10 pointer-events-auto w-[62px] h-[62px] rounded-full bg-[#282828] flex items-center justify-center shadow-2xl cursor-pointer touch-none select-none"
           animate={{ scale: interactionState === "Pressing" ? 1.1 : 1 }}
         >
           <VoiceIcon className="text-white" />
@@ -649,18 +532,24 @@ export default function VoiceHUD({ onTranscription, onProcessing }: VoiceHUDProp
             />
           )}
         </motion.button>
+
+        {/* Error Message */}
+        <AnimatePresence>
+          {errorMessage && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className="absolute bottom-[80px] right-0 bg-red-500 text-white text-xs px-3 py-2 rounded-lg max-w-[200px] pointer-events-auto shadow-lg z-[200]"
+            >
+              {errorMessage}
+              <button onClick={() => setErrorMessage(null)} className="ml-2 text-white/80 hover:text-white">
+                ×
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-

@@ -7,17 +7,20 @@ interface GlassButtonProps {
   icon: LucideIcon;
   onClick?: () => void;
   className?: string;
+  disabled?: boolean;
 }
 
 export const GlassButton: React.FC<GlassButtonProps> = ({ 
   icon: Icon, 
   onClick, 
-  className 
+  className,
+  disabled = false,
 }) => {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       className={`
         flex items-center justify-center
         w-[48px] h-[48px] rounded-full
@@ -40,14 +43,18 @@ export const GlassButton: React.FC<GlassButtonProps> = ({
         
         /* ------------------------------------- */
         
+        /* Disabled state */
+        ${disabled ? "opacity-40 cursor-not-allowed" : ""}
+        
         ${className || ""}
       `}
     >
       {/* Slightly darker icon for better contrast against the bright glass */}
-      <Icon size={22} className="text-black/90" />
+      <Icon size={22} className={disabled ? "text-black/40" : "text-black/90"} />
     </button>
   );
 };
+
 
 
 

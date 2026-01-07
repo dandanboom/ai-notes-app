@@ -1,0 +1,9 @@
+{
+  "regions": ["sin1"],
+  "functions": {
+    "src/app/**/*.ts": {
+      "maxDuration": 30
+    }
+  }
+}
+

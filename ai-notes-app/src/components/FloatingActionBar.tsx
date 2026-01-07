@@ -11,7 +11,21 @@ import { GlassButton } from "./GlassButton";
    VoiceHUD 作为独立的 Overlay 组件在页面层级添加
    ============================================ */
 
-export default function FloatingActionBar() {
+interface FloatingActionBarProps {
+  onUndo?: () => void;
+  onRedo?: () => void;
+  onAdd?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+}
+
+export default function FloatingActionBar({
+  onUndo,
+  onRedo,
+  onAdd,
+  canUndo = false,
+  canRedo = false,
+}: FloatingActionBarProps) {
   return (
     <div className="relative w-full h-[120px] pointer-events-none">
       {/* 1. Gradient Mask (Transparent to Background Color) */}
@@ -22,9 +36,20 @@ export default function FloatingActionBar() {
         
         {/* Left Actions (Glass Buttons) */}
         <div className="absolute left-[16px] bottom-[28px] flex gap-3 pointer-events-auto">
-          <GlassButton icon={Undo2} />
-          <GlassButton icon={Redo2} />
-          <GlassButton icon={Plus} />
+          <GlassButton 
+            icon={Undo2} 
+            onClick={onUndo}
+            disabled={!canUndo}
+          />
+          <GlassButton 
+            icon={Redo2} 
+            onClick={onRedo}
+            disabled={!canRedo}
+          />
+          <GlassButton 
+            icon={Plus} 
+            onClick={onAdd}
+          />
         </div>
 
         {/* 
@@ -36,6 +61,7 @@ export default function FloatingActionBar() {
     </div>
   );
 }
+
 
 
 
