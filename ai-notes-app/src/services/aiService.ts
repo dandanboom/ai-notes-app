@@ -500,3 +500,4 @@ export async function fileToBase64DataURL(file: File): Promise<string> {
   const base64 = btoa(binary);
   return `data:${file.type};base64,${base64}`;
 }
+

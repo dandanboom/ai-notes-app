@@ -134,3 +134,4 @@ export async function predictGhostText(currentContext: string): Promise<string> 
     return "";
   }
 }
+
